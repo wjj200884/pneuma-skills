@@ -1,0 +1,21 @@
+{
+  "title": "{{Noesis}}",
+  "repo": "{{repoUrl}}",
+  "author": {
+    "name": "",
+    "avatar": "",
+    "bio": ""
+  },
+  "sections": [
+    {
+      "id": "overview",
+      "title": "项目纵览",
+      "icon": "◇",
+      "pages": [
+        { "title": "作者与背景", "file": "docs/overview/author.md" },
+        { "title": "设计哲学", "file": "docs/overview/philosophy.md" },
+        { "title": "阅读收获", "file": "docs/overview/value.md" }
+      ]
+    }
+  ]
+}

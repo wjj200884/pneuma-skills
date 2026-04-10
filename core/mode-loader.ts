@@ -103,6 +103,13 @@ const builtinModes: Record<string, ModeSource> = {
     definitionLoader: () =>
       import("../modes/diagram/pneuma-mode.js").then((m) => m.default),
   },
+  noesis: {
+    type: "builtin",
+    manifestLoader: () =>
+      import("../modes/noesis/manifest.js").then((m) => m.default),
+    definitionLoader: () =>
+      import("../modes/noesis/pneuma-mode.js").then((m) => m.default),
+  },
 };
 
 /** External mode registry — registered by the CLI at startup via registerExternalMode */
