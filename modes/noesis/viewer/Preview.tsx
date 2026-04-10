@@ -529,7 +529,155 @@ function Sidebar({
 }
 
 /* ================================================================== */
-/*  Main Preview                                                       */
+/*  DocumentViewer — shared rendering core                             */
+/*  Used by both Pneuma Preview and standalone App                     */
+/* ================================================================== */
+
+function DocumentViewer({
+  manifest,
+  activeContent,
+  activeFile,
+  allPages,
+  onSelect,
+  dark,
+  toggleTheme,
+}: {
+  manifest: SiteManifest;
+  activeContent: string;
+  activeFile: string;
+  allPages: ManifestPage[];
+  onSelect: (file: string) => void;
+  dark: boolean;
+  toggleTheme: () => void;
+}) {
+  const [activeHeadingId, setActiveHeadingId] = useState("");
+  const mainRef = useRef<HTMLElement>(null);
+
+  const { rendered, toc } = useMemo(() => {
+    if (!activeContent) return { rendered: null, toc: [] };
+    const ast = Markdoc.parse(activeContent);
+    const tocItems = extractToc(ast);
+    const content = Markdoc.transform(ast, markdocConfig);
+    const reactContent = Markdoc.renderers.react(content, React, { components: markdocComponents });
+    return { rendered: reactContent, toc: tocItems };
+  }, [activeContent]);
+
+  useEffect(() => {
+    const root = mainRef.current;
+    if (!root || toc.length === 0) return;
+    const handleScroll = () => {
+      const headings = root.querySelectorAll<HTMLElement>("h1[id], h2[id], h3[id]");
+      let current = "";
+      const rootTop = root.getBoundingClientRect().top;
+      for (const h of headings) {
+        if (h.getBoundingClientRect().top - rootTop <= 120) current = h.id;
+      }
+      setActiveHeadingId(current);
+    };
+    root.addEventListener("scroll", handleScroll, { passive: true });
+    const t = setTimeout(handleScroll, 100);
+    return () => { root.removeEventListener("scroll", handleScroll); clearTimeout(t); };
+  }, [toc, activeContent]);
+
+  useEffect(() => {
+    mainRef.current?.scrollTo(0, 0);
+  }, [activeFile]);
+
+  const currentContext = useMemo(() => {
+    for (const s of manifest.sections) {
+      const p = s.pages.find((p) => p.file === activeFile);
+      if (p) return { section: s, page: p };
+    }
+    return null;
+  }, [manifest, activeFile]);
+
+  const prevNext = useMemo(() => {
+    const idx = allPages.findIndex((p) => p.file === activeFile);
+    return { prev: idx > 0 ? allPages[idx - 1] : null, next: idx < allPages.length - 1 ? allPages[idx + 1] : null };
+  }, [allPages, activeFile]);
+
+  return (
+    <div className="noesis-root" style={{ display: "flex", height: "100%", background: "var(--ns-bg)", color: "var(--ns-text)", transition: "background 0.2s, color 0.2s" }}>
+      <style>{themeCSS}</style>
+
+      <Sidebar manifest={manifest} activeFile={activeFile} onSelect={onSelect} dark={dark} onToggleTheme={toggleTheme} />
+
+      <main ref={mainRef} style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ display: "flex" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {currentContext && (
+              <div style={{ maxWidth: 768, margin: "0 auto", padding: "32px 40px 0" }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: "var(--ns-faint)", display: "flex", alignItems: "center", gap: 6 }}>
+                  {currentContext.section.icon && <span style={{ opacity: 0.5 }}>{currentContext.section.icon}</span>}
+                  <span>{currentContext.section.title}</span>
+                  <span style={{ opacity: 0.3 }}>/</span>
+                  <span style={{ color: "var(--ns-dim)" }}>{currentContext.page.title}</span>
+                </div>
+              </div>
+            )}
+
+            {manifest.author?.name && activeFile === allPages[0]?.file && (
+              <div style={{ maxWidth: 768, margin: "0 auto", padding: "24px 40px 0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid var(--ns-divider)" }}>
+                  {manifest.author.avatar && <img src={manifest.author.avatar} alt={manifest.author.name} style={{ width: 40, height: 40, borderRadius: "50%", background: "var(--ns-surface)" }} />}
+                  <div>
+                    <p style={{ fontSize: 14, fontWeight: 500, color: "var(--ns-text)", margin: 0 }}>{manifest.author.name}</p>
+                    {manifest.author.bio && <p style={{ fontSize: 12, color: "var(--ns-dim)", margin: "2px 0 0" }}>{manifest.author.bio}</p>}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <article style={{ maxWidth: 768, margin: "0 auto", padding: "32px 40px" }}>
+              <div className="noesis-content">{rendered}</div>
+            </article>
+
+            {(prevNext.prev || prevNext.next) && (
+              <div style={{ maxWidth: 768, margin: "0 auto", padding: "0 40px 64px" }}>
+                <div style={{ display: "flex", gap: 16, borderTop: "1px solid var(--ns-divider)", paddingTop: 32 }}>
+                  {prevNext.prev ? (
+                    <button onClick={() => onSelect(prevNext.prev!.file)} style={{ flex: 1, textAlign: "left", padding: 16, borderRadius: 16, border: "1px solid var(--ns-border)", background: "transparent", cursor: "pointer", color: "var(--ns-dim)", transition: "border-color 0.15s" }}>
+                      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--ns-faint)", display: "block", marginBottom: 4 }}>← 上一篇</span>
+                      <span style={{ fontSize: 14 }}>{prevNext.prev.title}</span>
+                    </button>
+                  ) : <div style={{ flex: 1 }} />}
+                  {prevNext.next ? (
+                    <button onClick={() => onSelect(prevNext.next!.file)} style={{ flex: 1, textAlign: "right", padding: 16, borderRadius: 16, border: "1px solid var(--ns-border)", background: "transparent", cursor: "pointer", color: "var(--ns-dim)", transition: "border-color 0.15s" }}>
+                      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--ns-faint)", display: "block", marginBottom: 4 }}>下一篇 →</span>
+                      <span style={{ fontSize: 14 }}>{prevNext.next.title}</span>
+                    </button>
+                  ) : <div style={{ flex: 1 }} />}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <TableOfContents items={toc} activeId={activeHeadingId} />
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Empty state                                                        */
+/* ================================================================== */
+
+function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div className="noesis-root" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--ns-faint)", background: "var(--ns-bg)" }}>
+      <style>{themeCSS}</style>
+      <div style={{ textAlign: "center" }}>
+        <p style={{ fontSize: 18, marginBottom: 8 }}>{title}</p>
+        <p style={{ fontSize: 14 }}>{subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Pneuma Shell                                                       */
+/*  @shell-start — gen-standalone.ts replaces below this line          */
 /* ================================================================== */
 
 export default function Preview({ files, selection, onActiveFileChange }: ViewerPreviewProps) {
@@ -552,143 +700,23 @@ export default function Preview({ files, selection, onActiveFileChange }: Viewer
     return f?.content || "";
   }, [files, activeFile]);
 
-  const [activeHeadingId, setActiveHeadingId] = useState("");
-  const mainRef = useRef<HTMLElement>(null);
-
-  // Parse Markdoc
-  const { rendered, toc } = useMemo(() => {
-    if (!activeContent) return { rendered: null, toc: [] };
-    const ast = Markdoc.parse(activeContent);
-    const tocItems = extractToc(ast);
-    const content = Markdoc.transform(ast, markdocConfig);
-    const reactContent = Markdoc.renderers.react(content, React, { components: markdocComponents });
-    return { rendered: reactContent, toc: tocItems };
-  }, [activeContent]);
-
-  // Scroll spy
-  useEffect(() => {
-    const root = mainRef.current;
-    if (!root || toc.length === 0) return;
-    const handleScroll = () => {
-      const headings = root.querySelectorAll<HTMLElement>("h1[id], h2[id], h3[id]");
-      let current = "";
-      const rootTop = root.getBoundingClientRect().top;
-      for (const h of headings) {
-        if (h.getBoundingClientRect().top - rootTop <= 120) current = h.id;
-      }
-      setActiveHeadingId(current);
-    };
-    root.addEventListener("scroll", handleScroll, { passive: true });
-    const t = setTimeout(handleScroll, 100);
-    return () => { root.removeEventListener("scroll", handleScroll); clearTimeout(t); };
-  }, [toc, activeContent]);
-
-  const currentContext = useMemo(() => {
-    if (!manifest) return null;
-    for (const s of manifest.sections) {
-      const p = s.pages.find((p) => p.file === activeFile);
-      if (p) return { section: s, page: p };
-    }
-    return null;
-  }, [manifest, activeFile]);
-
-  const prevNext = useMemo(() => {
-    const idx = allPages.findIndex((p) => p.file === activeFile);
-    return { prev: idx > 0 ? allPages[idx - 1] : null, next: idx < allPages.length - 1 ? allPages[idx + 1] : null };
-  }, [allPages, activeFile]);
-
   const handleSelect = useCallback((file: string) => {
     setLocalActiveFile(file);
     onActiveFileChange?.(file);
   }, [onActiveFileChange]);
 
-  if (!manifest) {
-    return (
-      <div className="noesis-root" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--ns-faint)", background: "var(--ns-bg)" }}>
-        <style>{themeCSS}</style>
-        <div style={{ textAlign: "center" }}>
-          <p style={{ fontSize: 18, marginBottom: 8 }}>缺少 manifest.json</p>
-          <p style={{ fontSize: 14 }}>创建 manifest.json 来定义文档站结构</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (allPages.length === 0) {
-    return (
-      <div className="noesis-root" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--ns-faint)", background: "var(--ns-bg)" }}>
-        <style>{themeCSS}</style>
-        <div style={{ textAlign: "center" }}>
-          <p style={{ fontSize: 18, marginBottom: 8 }}>{manifest.title}</p>
-          <p style={{ fontSize: 14 }}>manifest.json 中还没有页面</p>
-        </div>
-      </div>
-    );
-  }
+  if (!manifest) return <EmptyState title="缺少 manifest.json" subtitle="创建 manifest.json 来定义文档站结构" />;
+  if (allPages.length === 0) return <EmptyState title={manifest.title} subtitle="manifest.json 中还没有页面" />;
 
   return (
-    <div className="noesis-root" style={{ display: "flex", height: "100%", background: "var(--ns-bg)", color: "var(--ns-text)", transition: "background 0.2s, color 0.2s" }}>
-      <style>{themeCSS}</style>
-
-      <Sidebar manifest={manifest} activeFile={activeFile} onSelect={handleSelect} dark={dark} onToggleTheme={toggleTheme} />
-
-      <main ref={mainRef} style={{ flex: 1, overflowY: "auto" }}>
-        <div style={{ display: "flex" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {/* Breadcrumb */}
-            {currentContext && (
-              <div style={{ maxWidth: 768, margin: "0 auto", padding: "32px 40px 0" }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: "var(--ns-faint)", display: "flex", alignItems: "center", gap: 6 }}>
-                  {currentContext.section.icon && <span style={{ opacity: 0.5 }}>{currentContext.section.icon}</span>}
-                  <span>{currentContext.section.title}</span>
-                  <span style={{ opacity: 0.3 }}>/</span>
-                  <span style={{ color: "var(--ns-dim)" }}>{currentContext.page.title}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Author card */}
-            {manifest.author?.name && activeFile === allPages[0]?.file && (
-              <div style={{ maxWidth: 768, margin: "0 auto", padding: "24px 40px 0" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid var(--ns-divider)" }}>
-                  {manifest.author.avatar && <img src={manifest.author.avatar} alt={manifest.author.name} style={{ width: 40, height: 40, borderRadius: "50%", background: "var(--ns-surface)" }} />}
-                  <div>
-                    <p style={{ fontSize: 14, fontWeight: 500, color: "var(--ns-text)", margin: 0 }}>{manifest.author.name}</p>
-                    {manifest.author.bio && <p style={{ fontSize: 12, color: "var(--ns-dim)", margin: "2px 0 0" }}>{manifest.author.bio}</p>}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Content */}
-            <article style={{ maxWidth: 768, margin: "0 auto", padding: "32px 40px" }}>
-              <div className="noesis-content">{rendered}</div>
-            </article>
-
-            {/* Prev / Next */}
-            {(prevNext.prev || prevNext.next) && (
-              <div style={{ maxWidth: 768, margin: "0 auto", padding: "0 40px 64px" }}>
-                <div style={{ display: "flex", gap: 16, borderTop: "1px solid var(--ns-divider)", paddingTop: 32 }}>
-                  {prevNext.prev ? (
-                    <button onClick={() => handleSelect(prevNext.prev!.file)} style={{ flex: 1, textAlign: "left", padding: 16, borderRadius: 16, border: "1px solid var(--ns-border)", background: "transparent", cursor: "pointer", color: "var(--ns-dim)", transition: "border-color 0.15s" }}>
-                      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--ns-faint)", display: "block", marginBottom: 4 }}>← 上一篇</span>
-                      <span style={{ fontSize: 14 }}>{prevNext.prev.title}</span>
-                    </button>
-                  ) : <div style={{ flex: 1 }} />}
-                  {prevNext.next ? (
-                    <button onClick={() => handleSelect(prevNext.next!.file)} style={{ flex: 1, textAlign: "right", padding: 16, borderRadius: 16, border: "1px solid var(--ns-border)", background: "transparent", cursor: "pointer", color: "var(--ns-dim)", transition: "border-color 0.15s" }}>
-                      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--ns-faint)", display: "block", marginBottom: 4 }}>下一篇 →</span>
-                      <span style={{ fontSize: 14 }}>{prevNext.next.title}</span>
-                    </button>
-                  ) : <div style={{ flex: 1 }} />}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <TableOfContents items={toc} activeId={activeHeadingId} />
-        </div>
-      </main>
-    </div>
+    <DocumentViewer
+      manifest={manifest}
+      activeContent={activeContent}
+      activeFile={activeFile}
+      allPages={allPages}
+      onSelect={handleSelect}
+      dark={dark}
+      toggleTheme={toggleTheme}
+    />
   );
 }
