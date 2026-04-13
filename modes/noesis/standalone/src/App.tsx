@@ -6,7 +6,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import Markdoc from "@markdoc/markdoc";
 import React from "react";
-import mermaid from "mermaid";
 
 /* ================================================================== */
 /*  Theme CSS (injected via <style> tag)                               */
@@ -177,39 +176,55 @@ function ThemeToggle({ dark, onToggle }: { dark: boolean; onToggle: () => void }
 /*  Mermaid                                                            */
 /* ================================================================== */
 
-let mermaidReady = false;
+let mermaidModule: typeof import("mermaid") | null = null;
 
-function initMermaid() {
-  if (mermaidReady) return;
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: "dark",
-    themeVariables: {
-      primaryColor: "#18E299",
-      primaryTextColor: "#ededed",
-      primaryBorderColor: "#0fa76e",
-      lineColor: "#333",
-      secondaryColor: "#141414",
-      tertiaryColor: "#0d0d0d",
-      fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
-      fontSize: "13px",
-    },
-  });
-  mermaidReady = true;
+async function getMermaid() {
+  if (!mermaidModule) {
+    mermaidModule = await import("mermaid");
+    mermaidModule.default.initialize({
+      startOnLoad: false,
+      theme: "dark",
+      themeVariables: {
+        primaryColor: "#18E299",
+        primaryTextColor: "#ededed",
+        primaryBorderColor: "#0fa76e",
+        lineColor: "#333",
+        secondaryColor: "#141414",
+        tertiaryColor: "#0d0d0d",
+        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+        fontSize: "13px",
+      },
+    });
+  }
+  return mermaidModule.default;
 }
 
 function MermaidBlock({ code }: { code: string }) {
   const [svg, setSvg] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    initMermaid();
-    const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
-    mermaid
-      .render(id, code)
-      .then((r) => { setSvg(r.svg); setError(""); })
-      .catch((e) => { setError(String(e)); setSvg(""); });
+    let cancelled = false;
+    setLoading(true);
+    getMermaid()
+      .then((m) => {
+        const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
+        return m.render(id, code);
+      })
+      .then((r) => { if (!cancelled) { setSvg(r.svg); setError(""); } })
+      .catch((e) => { if (!cancelled) { setError(String(e)); setSvg(""); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [code]);
+
+  if (loading && !svg) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", padding: 24, color: "var(--ns-faint)", fontSize: 13 }}>
+        Loading diagram...
+      </div>
+    );
+  }
 
   if (error) {
     return <pre style={{ color: "#ef4444", fontSize: 12, padding: 12, background: "var(--ns-surface)", borderRadius: 16, border: "1px solid var(--ns-border)" }}>{error}</pre>;

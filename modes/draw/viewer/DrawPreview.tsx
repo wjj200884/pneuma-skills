@@ -266,11 +266,14 @@ export default function DrawPreview({
   const [excalidrawKey, setExcalidrawKey] = useState(0);
 
   // Load Excalidraw dynamically
+  const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
-    if (!ready) {
-      loadExcalidraw().then(() => setReady(true));
+    if (!ready && !loadError) {
+      loadExcalidraw()
+        .then(() => setReady(true))
+        .catch(() => setLoadError("@excalidraw/excalidraw is not installed. Run: bun add @excalidraw/excalidraw"));
     }
-  }, [ready]);
+  }, [ready, loadError]);
 
   // Parse the excalidraw data from files
   const excalidrawData = useMemo(() => parseExcalidrawFile(files, activeFile), [files, activeFile]);
@@ -668,6 +671,23 @@ export default function DrawPreview({
   }), []);
 
   const excalidrawFiles = files.filter((f) => f.path.endsWith(".excalidraw"));
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col h-full">
+        <DrawToolbar
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          previewMode={previewMode}
+          onSetPreviewMode={setPreviewMode}
+          readonly={readonly}
+        />
+        <div className="flex items-center justify-center flex-1 text-neutral-500 text-sm">
+          {loadError}
+        </div>
+      </div>
+    );
+  }
 
   if (!ready || !ExcalidrawComponent) {
     return (

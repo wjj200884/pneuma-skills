@@ -182,9 +182,15 @@ export function startFileWatcher(
 
   watcher.on("change", scheduleFlush);
   watcher.on("add", scheduleFlush);
+  let errorCount = 0;
+  let lastErrorTime = 0;
   watcher.on("error", (err) => {
-    // Permission errors (EACCES/EPERM) during directory traversal — log and continue
-    console.warn(`[file-watcher] ${err}`);
+    const now = Date.now();
+    errorCount++;
+    if (errorCount <= 3 || now - lastErrorTime > 10_000) {
+      console.warn(`[file-watcher] ${err}${errorCount > 3 ? ` (${errorCount} total, suppressing repeated)` : ""}`);
+      lastErrorTime = now;
+    }
   });
 
   const patternDesc = viewerConfig.watchPatterns.join(", ");
